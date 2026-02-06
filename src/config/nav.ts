@@ -1,5 +1,5 @@
 // src/config/nav.ts
-import { LayoutDashboard, Car, CalendarClock, Settings, User, LogOut } from 'lucide-react';
+import { LayoutDashboard, Home, Car, CalendarClock, Settings, User, LogOut } from 'lucide-react';
 
 export const navConfig = {
   sacco: [
@@ -9,8 +9,9 @@ export const navConfig = {
     { title: 'Settings', href: '/dashboard/sacco/settings', icon: Settings },
   ],
   user: [
-    { title: 'Explore', href: '/dashboard/explore', icon: Car },
-    { title: 'My Trips', href: '/dashboard/trips', icon: CalendarClock },
-    { title: 'Profile', href: '/dashboard/profile', icon: User },
+    { title: 'Home', href: '/dashboard/user', icon: Home },
+    { title: 'Explore', href: '/dashboard/user/explore', icon: Car },
+    { title: 'My Trips', href: '/dashboard/user/trips', icon: CalendarClock },
+    { title: 'Profile', href: '/dashboard/user/profile', icon: User },
   ],
 };

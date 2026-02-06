@@ -80,30 +80,53 @@ const loginSchema = z.object({
 export async function loginAction(prevState: any, formData: FormData) {
   const supabase = await createClient();
 
-  // 1. Validate Input Structure
+  // 1. Validate Input
   const rawData = {
     email: formData.get('email'),
     password: formData.get('password'),
   };
 
+  const loginSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(1),
+  });
+
   const validatedFields = loginSchema.safeParse(rawData);
 
   if (!validatedFields.success) {
-    return { status: 'error', message: 'Invalid email or password format.' };
+    return { status: 'error', message: 'Invalid credentials format.' };
   }
 
-  // 2. Authenticate with Supabase
-  const { error } = await supabase.auth.signInWithPassword({
+  // 2. Authenticate
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: validatedFields.data.email,
     password: validatedFields.data.password,
   });
 
   if (error) {
-    // Return specific error messages for better UX, but keep generic security in mind
     return { status: 'error', message: error.message };
   }
 
-  // 3. Revalidate & Redirect
-  revalidatePath('/dashboard/sacco'); // Refresh data
-  redirect('/dashboard/sacco'); // Or dynamic redirect based on user role
+  // 3. INTELLIGENT REDIRECT
+  // Fetch the user's role from the profiles table
+  if (data.user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', data.user.id)
+      .single();
+
+    const role = profile?.role || 'user';
+
+    // Redirect based on role
+    if (role === 'sacco_admin') {
+      redirect('/dashboard/sacco');
+    } else if (role === 'super_admin') {
+      redirect('/dashboard/admin'); // Future proofing
+    } else {
+      redirect('/dashboard/user'); // The default for normal users
+    }
+  }
+
+  return { status: 'error', message: 'User session not found.' };
 }

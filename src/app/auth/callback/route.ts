@@ -5,9 +5,8 @@ import { cookies } from 'next/headers';
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  // if "next" is in param, use it as the redirect URL
-  const next = searchParams.get('next') ?? '/dashboard/sacco';
-
+  // We ignore the 'next' param for dashboard logic to enforce role-based landing
+  
   if (code) {
     const cookieStore = await cookies();
     const supabase = createServerClient(
@@ -15,32 +14,35 @@ export async function GET(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
+          getAll() { return cookieStore.getAll(); },
           setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              );
-            } catch {
-              // The `setAll` method was called from a Server Component.
-              // This can be ignored if you have middleware refreshing
-              // user sessions.
-            }
+             try {
+               cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+             } catch {}
           },
         },
       }
     );
     
-    // Exchange the code for a session
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+    if (!error && data.user) {
+       // INTELLIGENT REDIRECT FOR OAUTH
+       const { data: profile } = await supabase
+         .from('profiles')
+         .select('role')
+         .eq('id', data.user.id)
+         .single();
+       
+       const role = profile?.role || 'user';
+       
+       if (role === 'sacco_admin') {
+          return NextResponse.redirect(`${origin}/dashboard/sacco`);
+       } else {
+          return NextResponse.redirect(`${origin}/dashboard/user`);
+       }
     }
   }
 
-  // Return the user to an error page with instructions
-  return NextResponse.redirect(`${origin}/login?message=Could not login with provider`);
+  return NextResponse.redirect(`${origin}/login?message=Auth failed`);
 }
