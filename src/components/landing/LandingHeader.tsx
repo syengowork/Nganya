@@ -1,61 +1,42 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Moon, Sun, Zap, ArrowRight } from 'lucide-react';
-import { useTheme } from 'next-themes';
+import { Zap, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
+import { ThemeToggle } from '@/components/ThemeToggle'; // Import the new Toggle
 
 export function LandingHeader() {
-  const { setTheme, theme } = useTheme();
   const { scrollY } = useScroll();
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isHidden, setIsHidden] = useState(false);
-  const [lastScrollY, setLastScrollY] = useState(0);
+  const [isHidden, setIsHidden] = useState(false); 
 
   // 1. Detect Scroll Position for Style Change
   useMotionValueEvent(scrollY, "change", (latest) => {
     const isNowScrolled = latest > 50;
     if (isNowScrolled !== isScrolled) setIsScrolled(isNowScrolled);
-
-    // Optional: Hide on scroll down, show on scroll up (Smart Hide)
-    // if (latest > lastScrollY && latest > 100) setIsHidden(true);
-    // else setIsHidden(false);
-    
-    setLastScrollY(latest);
   });
 
   return (
     <motion.header
       initial={{ y: -100 }}
       animate={{ y: isHidden ? -100 : 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
       className={cn(
-        "fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out border-b border-transparent",
+        "fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out border-b",
         isScrolled 
-          ? "h-16 bg-background/80 backdrop-blur-xl border-border/40 shadow-sm" // Scrolled State
-          : "h-20 bg-transparent" // Hero State
+          ? "h-16 bg-background/80 backdrop-blur-xl border-border/40 shadow-sm supports-[backdrop-filter]:bg-background/60" // Scrolled State
+          : "h-20 bg-transparent border-transparent" // Hero State
       )}
     >
       <div className="container mx-auto px-4 h-full flex items-center justify-between">
         
         {/* --- LEFT: VIBE SWITCH (Theme) --- */}
         <div className="flex-1 flex justify-start">
-           <Button 
-             variant="ghost" 
-             size="icon" 
-             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-             className={cn(
-               "rounded-full transition-colors",
-               !isScrolled && "text-white hover:bg-white/10 hover:text-white"
-             )}
-           >
-              <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-              <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Toggle theme</span>
-           </Button>
+           {/* forceWhite ensures icon is visible on Hero image when not scrolled */}
+           <ThemeToggle forceWhite={!isScrolled} />
         </div>
 
         {/* --- CENTER: BRAND --- */}
@@ -96,10 +77,10 @@ export function LandingHeader() {
            <Button 
              asChild
              className={cn(
-               "font-bold rounded-full transition-all shadow-lg",
+               "font-bold rounded-full transition-all shadow-lg hover:scale-105 active:scale-95",
                !isScrolled 
                  ? "bg-white text-black hover:bg-white/90 border-none" 
-                 : "bg-primary text-primary-foreground hover:bg-primary/90"
+                 : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/20"
              )}
            >
              <Link href="/dashboard/user/explore">

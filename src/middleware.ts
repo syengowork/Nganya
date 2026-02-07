@@ -6,6 +6,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Matcher ignores static assets, favicon, and standard next.js files
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
