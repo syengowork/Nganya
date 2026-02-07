@@ -11,28 +11,43 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  Edit2, Trash2, Search, Plus, CarFront, AlertCircle, Loader2, CheckCircle2 
+  Edit2, Trash2, Search, Plus, CarFront, AlertCircle, Loader2, CheckCircle2, XCircle 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle 
 } from "@/components/ui/dialog";
+import { toast } from 'sonner'; // Assuming you use Sonner for toasts
 
-// Define strict types matching your DB
+// --- TYPES ---
 interface Vehicle {
   id: string;
   name: string;
   plate_number: string;
   capacity: number;
   rate_per_hour: number;
-  cover_photo: string; // The DB returns 'image_url' aliased or 'cover_photo' depending on query
-  image_url?: string;  // Fallback if your select query uses raw column name
+  cover_photo: string;
+  image_url?: string;
   is_available: boolean;
   features: string[];
   description?: string;
   exterior_photos?: string[];
   interior_photos?: string[];
+}
+
+// Specific type for the Wizard Form Data
+export interface VehicleEditData {
+  id: string;
+  name: string;
+  plate_number: string;
+  rate_per_hour: number;
+  capacity: number;
+  description: string;
+  cover_photo_url?: string;
+  exterior_photos_urls: string[];
+  interior_photos_urls: string[];
+  features: string[];
 }
 
 interface FleetClientProps {
@@ -41,9 +56,12 @@ interface FleetClientProps {
 
 export default function FleetClient({ initialVehicles }: FleetClientProps) {
   const router = useRouter();
-  const [vehicles, setVehicles] = useState(initialVehicles);
+  const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+  
+  // FIX: Replaced <any> with strict type
+  const [selectedVehicle, setSelectedVehicle] = useState<VehicleEditData | null>(null);
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   
@@ -67,7 +85,6 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
   });
 
   // --- HANDLERS ---
-
   const handleCreate = () => {
     setSelectedVehicle(null);
     setIsModalOpen(true);
@@ -75,16 +92,13 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
 
   const handleEdit = (vehicle: Vehicle) => {
     // Map DB fields to Wizard Form Schema
-    // Ensure we handle both 'image_url' (DB column) and 'cover_photo' (UI prop)
-    const mapped = {
+    const mapped: VehicleEditData = {
         id: vehicle.id,
         name: vehicle.name,
         plate_number: vehicle.plate_number,
         rate_per_hour: vehicle.rate_per_hour,
         capacity: vehicle.capacity,
         description: vehicle.description || '',
-        // Handle images: Wizard expects File[] for new uploads, but string for existing
-        // We will pass the string URL so the Wizard can display a preview
         cover_photo_url: vehicle.cover_photo || vehicle.image_url, 
         exterior_photos_urls: vehicle.exterior_photos || [],
         interior_photos_urls: vehicle.interior_photos || [],
@@ -106,25 +120,33 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
     // 1. Optimistic Update (Remove immediately from UI)
     const previousVehicles = [...vehicles];
     setVehicles(v => v.filter(c => c.id !== deleteId));
-    setDeleteId(null); // Close modal
-
+    
     // 2. Server Action
-    const result = await deleteVehicleAction(deleteId);
+    try {
+      const result = await deleteVehicleAction(deleteId);
+      
+      // FIX: Check if result exists before accessing status
+      if (!result || result.status === 'error') {
+        throw new Error(result?.message || 'Failed to delete');
+      }
+      
+      // Success
+      toast.success('Vehicle removed successfully');
+      router.refresh(); 
 
-    if (result.status === 'error') {
+    } catch (error) {
       // Revert if failed
       setVehicles(previousVehicles);
-      alert(result.message); // Simple alert fallback or use toast
-    } else {
-      // 3. Sync with Server
-      router.refresh(); 
+      toast.error('Could not delete vehicle. Please try again.');
+      console.error(error);
+    } finally {
+      setIsDeleting(false);
+      setDeleteId(null);
     }
-    setIsDeleting(false);
   };
 
   const onWizardClose = () => {
     setIsModalOpen(false);
-    // Refresh data to show new/edited vehicle
     router.refresh(); 
   };
 
@@ -133,23 +155,24 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
       {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-           <h2 className="text-3xl font-black tracking-tighter">Fleet Management</h2>
+           <h2 className="text-3xl font-black tracking-tighter font-street">Fleet Management</h2>
            <p className="text-muted-foreground">
-             <span className="font-semibold text-foreground">{vehicles.length}</span> vehicles total • <span className="text-green-600">{vehicles.filter(v => v.is_available).length} active</span>
+             <span className="font-semibold text-foreground">{vehicles.length}</span> vehicles total • 
+             <span className="text-primary font-bold ml-1">{vehicles.filter(v => v.is_available).length} Active</span>
            </p>
         </div>
-        <Button onClick={handleCreate} size="lg" className="shadow-xl shadow-primary/20 hover:scale-105 transition-transform">
+        <Button onClick={handleCreate} size="lg" className="shadow-lg shadow-primary/20 hover:scale-105 transition-transform font-bold">
           <Plus className="mr-2 h-5 w-5" /> Add New Nganya
         </Button>
       </div>
 
       {/* --- CONTROLS --- */}
-      <div className="flex flex-col sm:flex-row gap-4 items-center bg-card p-2 rounded-2xl border shadow-sm">
+      <div className="flex flex-col sm:flex-row gap-4 items-center bg-card p-2 rounded-2xl border border-border shadow-sm">
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
           <Input 
             placeholder="Search by name or plate..." 
-            className="pl-10 border-none bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted transition-colors h-10 rounded-xl" 
+            className="pl-10 border-none bg-muted/50 focus-visible:ring-1 focus-visible:ring-primary focus-visible:bg-muted transition-colors h-10 rounded-xl" 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -159,21 +182,36 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
 
         <Tabs defaultValue="all" onValueChange={setStatusFilter} className="w-full sm:w-auto">
           <TabsList className="bg-transparent p-0 gap-2 h-10">
-            <TabsTrigger value="all" className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary rounded-full px-4">All</TabsTrigger>
-            <TabsTrigger value="available" className="data-[state=active]:bg-green-500/10 data-[state=active]:text-green-600 rounded-full px-4">Active</TabsTrigger>
-            <TabsTrigger value="booked" className="data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-600 rounded-full px-4">Booked</TabsTrigger>
+            <TabsTrigger 
+              value="all" 
+              className="rounded-full px-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:text-primary transition-colors"
+            >
+              All
+            </TabsTrigger>
+            <TabsTrigger 
+              value="available" 
+              className="rounded-full px-4 data-[state=active]:bg-green-500/10 data-[state=active]:text-green-600 hover:text-green-600 transition-colors"
+            >
+              Active
+            </TabsTrigger>
+            <TabsTrigger 
+              value="booked" 
+              className="rounded-full px-4 data-[state=active]:bg-orange-500/10 data-[state=active]:text-orange-600 hover:text-orange-600 transition-colors"
+            >
+              Booked
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       {/* --- VEHICLE LIST --- */}
       {filteredVehicles.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center space-y-6 border-2 border-dashed rounded-3xl bg-muted/20">
-          <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center">
+        <div className="flex flex-col items-center justify-center py-24 text-center space-y-6 border-2 border-dashed border-muted rounded-3xl bg-muted/5">
+          <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center animate-pulse">
             <CarFront className="w-10 h-10 text-muted-foreground" />
           </div>
           <div className="space-y-2">
-            <h3 className="text-xl font-bold">No vehicles found</h3>
+            <h3 className="text-xl font-bold font-street">No vehicles found</h3>
             <p className="text-muted-foreground max-w-xs mx-auto">
               {searchQuery ? "Try adjusting your search terms to find your vehicle." : "Your fleet is empty. Add your first Nganya to get started."}
             </p>
@@ -192,13 +230,13 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
               >
-                <AccordionItem value={car.id} className="border rounded-2xl px-2 bg-card shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+                <AccordionItem value={car.id} className="border border-border rounded-2xl px-2 bg-card shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-300 overflow-hidden">
                   <AccordionTrigger className="hover:no-underline py-4 px-2">
                     <div className="flex items-center gap-4 w-full text-left pr-4">
                       {/* Image Avatar */}
                       <Avatar className="h-14 w-14 rounded-xl border-2 border-border shadow-sm">
                         <AvatarImage src={car.cover_photo || car.image_url} className="object-cover" />
-                        <AvatarFallback className="rounded-xl bg-primary/10 text-primary font-bold">
+                        <AvatarFallback className="rounded-xl bg-muted text-muted-foreground font-bold font-street">
                           {car.plate_number.slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
@@ -206,9 +244,11 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
                       {/* Info Block */}
                       <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-2">
                         <div>
-                          <h4 className="font-bold text-lg truncate leading-tight">{car.name}</h4>
+                          <h4 className="font-bold text-lg truncate leading-tight font-street">{car.name}</h4>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                            <span className="font-mono font-medium bg-muted px-1.5 py-0.5 rounded text-foreground">{car.plate_number}</span>
+                            <span className="font-mono font-medium bg-muted px-1.5 py-0.5 rounded text-foreground border border-border">
+                              {car.plate_number}
+                            </span>
                             <span>•</span>
                             <span>{car.capacity} Seats</span>
                           </div>
@@ -216,7 +256,7 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
                         
                         {/* Status Badges (Visible on Desktop) */}
                         <div className="hidden md:flex items-center gap-2">
-                           <Badge variant="outline" className="bg-background/50">
+                           <Badge variant="outline" className="bg-muted/50 text-foreground border-border">
                               KES {car.rate_per_hour}/hr
                            </Badge>
                         </div>
@@ -224,49 +264,53 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
 
                       {/* Status Indicator */}
                       <Badge 
-                        variant={car.is_available ? 'default' : 'secondary'} 
+                        variant="outline"
                         className={cn(
-                          "mr-2 whitespace-nowrap px-3 py-1",
+                          "mr-2 whitespace-nowrap px-3 py-1 border",
                           car.is_available 
-                            ? "bg-green-100 text-green-700 hover:bg-green-100 border-green-200" 
-                            : "bg-orange-100 text-orange-700 hover:bg-orange-100 border-orange-200"
+                            ? "bg-green-500/10 text-green-600 border-green-500/20" 
+                            : "bg-orange-500/10 text-orange-600 border-orange-500/20"
                         )}
                       >
                         {car.is_available ? (
                           <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Active</span>
                         ) : (
-                          <span className="flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> Booked</span>
+                          <span className="flex items-center gap-1.5"><XCircle className="w-3.5 h-3.5" /> Booked</span>
                         )}
                       </Badge>
                     </div>
                   </AccordionTrigger>
                   
                   <AccordionContent className="pb-4 pt-0 px-2">
-                    <div className="bg-muted/30 rounded-xl p-6 mt-2 border border-border/50">
+                    <div className="bg-muted/30 rounded-xl p-6 mt-2 border border-border">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
                             <div className="space-y-1.5">
-                                <p className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Pricing</p>
-                                <p className="font-bold text-xl">KES {car.rate_per_hour?.toLocaleString()}</p>
+                                <p className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold">Pricing</p>
+                                <p className="font-black text-xl font-street text-primary">KES {car.rate_per_hour?.toLocaleString()}</p>
                             </div>
                             <div className="space-y-1.5">
-                                <p className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Highlights</p>
+                                <p className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold">Highlights</p>
                                 <div className="flex flex-wrap gap-1">
                                     {car.features?.length 
-                                      ? car.features.slice(0, 3).map(f => <span key={f} className="bg-background border px-1.5 py-0.5 rounded text-xs">{f}</span>) 
+                                      ? car.features.slice(0, 3).map(f => (
+                                          <span key={f} className="bg-background border border-border px-1.5 py-0.5 rounded text-[10px] font-medium text-foreground">
+                                            {f}
+                                          </span>
+                                        )) 
                                       : <span className="text-muted-foreground italic">Standard</span>}
-                                    {car.features?.length > 3 && <span className="text-xs text-muted-foreground">+{car.features.length - 3} more</span>}
+                                    {car.features?.length > 3 && <span className="text-[10px] text-muted-foreground">+{car.features.length - 3} more</span>}
                                 </div>
                             </div>
                             <div className="space-y-1.5">
-                                <p className="text-muted-foreground text-xs uppercase tracking-wider font-semibold">Description</p>
-                                <p className="text-muted-foreground line-clamp-2">{car.description || "No description provided."}</p>
+                                <p className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold">Description</p>
+                                <p className="text-muted-foreground line-clamp-2 leading-relaxed">{car.description || "No description provided."}</p>
                             </div>
                             <div className="flex items-end justify-end gap-3 h-full">
                                 <Button 
                                   variant="outline" 
                                   size="sm" 
                                   onClick={(e) => confirmDelete(e, car.id)}
-                                  className="text-destructive hover:text-destructive border-destructive/20 hover:bg-destructive/10 hover:border-destructive/30"
+                                  className="text-destructive hover:text-destructive border-destructive/20 hover:bg-destructive/10 hover:border-destructive/50"
                                 >
                                     <Trash2 className="w-4 h-4 mr-2"/> Delete
                                 </Button>
@@ -274,7 +318,7 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
                                   size="sm" 
                                   variant="secondary" 
                                   onClick={() => handleEdit(car)}
-                                  className="bg-primary/10 text-primary hover:bg-primary/20 border border-primary/10"
+                                  className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md shadow-primary/10"
                                 >
                                     <Edit2 className="w-4 h-4 mr-2"/> Edit Details
                                 </Button>
@@ -298,14 +342,16 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
 
       {/* --- DELETE CONFIRMATION MODAL --- */}
       <Dialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md border-border bg-card">
           <DialogHeader>
-            <DialogTitle className="text-destructive flex items-center gap-2">
+            <DialogTitle className="text-destructive flex items-center gap-2 font-street">
               <AlertCircle className="w-5 h-5"/> Delete Vehicle?
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-muted-foreground">
               This action cannot be undone. This will permanently remove the vehicle 
-              <span className="font-semibold text-foreground"> {vehicles.find(v => v.id === deleteId)?.plate_number} </span>
+              <span className="font-mono font-bold text-foreground bg-muted px-1 rounded mx-1"> 
+                {vehicles.find(v => v.id === deleteId)?.plate_number} 
+              </span>
               from your fleet and database.
             </DialogDescription>
           </DialogHeader>
@@ -315,6 +361,7 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
               variant="destructive" 
               onClick={executeDelete} 
               disabled={isDeleting}
+              className="shadow-lg shadow-destructive/20"
             >
               {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Trash2 className="w-4 h-4 mr-2"/>}
               Delete Vehicle

@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link'; // IMPORT LINK
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wifi, Music, Tv, Wind, ShieldCheck, Heart, Star, Users } from 'lucide-react';
+import { Wifi, Music, Tv, Wind, ShieldCheck, Heart, Star, Share2 } from 'lucide-react'; // ADD SHARE ICON
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner'; // Assuming you have sonner or use alert
 
-// Icon Map
 const featureIcons: Record<string, any> = {
   'WiFi': Wifi, 'Sound System': Music, 'TV Screens': Tv, 'AC': Wind, 'CCTV': ShieldCheck, 'VIP': Star,
 };
@@ -26,43 +26,50 @@ interface VehicleProps {
   sacco?: { name: string; logo_url: string };
 }
 
-interface VehicleCardProps {
-  vehicle: VehicleProps;
-  onClick?: () => void;
-}
-
-export function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
+// REMOVED onClick prop - we use Link now
+export function VehicleCard({ vehicle }: { vehicle: VehicleProps }) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
 
-  // Gallery Logic
   const gallery = [vehicle.image_url, ...(vehicle.exterior_photos || [])].filter(Boolean);
 
-  // Stop propagation for swiper arrows so we don't trigger the modal
+  // Prevent Navigation when clicking arrows
   const nextImage = (e: React.MouseEvent) => {
+    e.preventDefault(); 
     e.stopPropagation();
     setCurrentImageIndex((prev) => (prev + 1) % gallery.length);
   };
   
   const prevImage = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     setCurrentImageIndex((prev) => (prev - 1 + gallery.length) % gallery.length);
   };
 
   const handleLike = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
-    // Add like logic here later
+    // TODO: Add Server Action for Wishlist
+    toast.success("Added to Wishlist");
+  };
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const url = `${window.location.origin}/dashboard/user/book/${vehicle.id}`;
+    navigator.clipboard.writeText(url);
+    toast.success("Link copied to clipboard");
   };
 
   return (
-    <div 
-      className="group relative cursor-pointer space-y-3 select-none"
-      onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => { setIsHovered(false); setCurrentImageIndex(0); }}
-    >
-      {/* --- 1. IMMERSIVE IMAGE CONTAINER (Airbnb Style) --- */}
-      <div className="relative aspect-[20/19] md:aspect-square overflow-hidden rounded-xl bg-muted/20">
+    <Link href={`/dashboard/user/book/${vehicle.id}`} className="block group relative space-y-3 select-none">
+      
+      {/* --- IMMERSIVE IMAGE CONTAINER --- */}
+      <div 
+        className="relative aspect-[20/19] md:aspect-square overflow-hidden rounded-xl bg-muted/20"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => { setIsHovered(false); setCurrentImageIndex(0); }}
+      >
         <AnimatePresence mode="wait">
           <motion.div 
             key={currentImageIndex}
@@ -82,7 +89,7 @@ export function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
           </motion.div>
         </AnimatePresence>
         
-        {/* Overlays */}
+        {/* Badges */}
         <div className="absolute top-3 left-3 z-10 flex gap-2">
             {!vehicle.is_available && (
                 <Badge variant="destructive" className="backdrop-blur-md shadow-sm">Booked</Badge>
@@ -94,12 +101,21 @@ export function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
             )}
         </div>
 
-        <button 
-          onClick={handleLike}
-          className="absolute top-3 right-3 z-10 p-2 rounded-full text-white/70 hover:scale-110 hover:text-white transition-all active:scale-95"
-        >
-            <Heart className="w-6 h-6 fill-black/20 stroke-white drop-shadow-md" />
-        </button>
+        {/* Action Buttons (Top Right) */}
+        <div className="absolute top-3 right-3 z-10 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={handleLike}
+              className="p-2 rounded-full bg-black/20 hover:bg-white text-white hover:text-red-500 backdrop-blur-md transition-all shadow-sm"
+            >
+                <Heart className="w-5 h-5" />
+            </button>
+            <button 
+              onClick={handleShare}
+              className="p-2 rounded-full bg-black/20 hover:bg-white text-white hover:text-black backdrop-blur-md transition-all shadow-sm"
+            >
+                <Share2 className="w-5 h-5" />
+            </button>
+        </div>
 
         {/* Hover Navigation (Stealth Mode) */}
         {gallery.length > 1 && isHovered && (
@@ -117,20 +133,16 @@ export function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
         )}
       </div>
 
-      {/* --- 2. MINIMALIST DETAILS (No Border) --- */}
+      {/* --- MINIMALIST DETAILS --- */}
       <div className="space-y-1">
         <div className="flex justify-between items-start gap-2">
-            <h3 className="font-semibold text-base leading-tight truncate">{vehicle.name}</h3>
+            <h3 className="font-semibold text-base leading-tight truncate group-hover:text-primary transition-colors">{vehicle.name}</h3>
             <div className="flex items-center gap-1 shrink-0">
                 <Star className="w-3.5 h-3.5 fill-black text-black" />
-                <span className="text-sm font-light">4.9</span>
+                <span className="text-sm font-light">5.0</span>
             </div>
         </div>
         
-        <p className="text-muted-foreground text-sm line-clamp-1">
-            {vehicle.features.slice(0, 3).join(' • ')}
-        </p>
-
         <p className="text-muted-foreground text-sm line-clamp-1">
             {vehicle.capacity} Seats • <span className="uppercase">{vehicle.plate_number}</span>
         </p>
@@ -140,6 +152,6 @@ export function VehicleCard({ vehicle, onClick }: VehicleCardProps) {
             <span className="text-sm text-muted-foreground font-light">hour</span>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { VehicleCard } from '@/components/dashboard/user/VehicleCard';
-import { VehicleDetailModal } from '@/components/dashboard/user/VehicleDetailModal';
 import { CarFront } from 'lucide-react';
 import { ExploreFilters } from '@/components/dashboard/user/ExploreFilters';
 
@@ -48,13 +47,6 @@ export function ExploreClient({ vehicles, searchQuery }: ExploreClientProps) {
             </p>
         </div>
       )}
-
-      {/* --- THE MODAL (Lives at the root of the client view) --- */}
-      <VehicleDetailModal 
-        isOpen={!!selectedVehicle} 
-        onClose={() => setSelectedVehicle(null)} 
-        vehicle={selectedVehicle} 
-      />
     </div>
   );
 }

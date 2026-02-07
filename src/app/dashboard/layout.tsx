@@ -1,28 +1,32 @@
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
-import DashboardLayout from '@/components/layout/DashboardLayout'; // Your existing UI component
+import { cookies } from 'next/headers'; // Import cookies
+import DashboardLayout from '@/components/layout/DashboardLayout';
 
 export default async function Layout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
 
-  // 1. Check Auth (Middleware does this too, but double-check for data access)
+  // 1. Auth Check
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  // 2. Fetch User Role from Database
-  // We need this because Auth User object doesn't carry the 'role' we defined in schema.sql
+  // 2. Fetch User Role
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
     .single();
 
-  // Default to 'user' if profile is missing (safety fallback)
   const userRole = profile?.role === 'sacco_admin' ? 'sacco' : 'user';
 
-  // 3. Render the UI Layout with the Correct Role
+  // 3. READ PERSISTENT STATE (The Magic Logic)
+  // We check cookies on the server so the HTML arrives correctly formed.
+  // No more flickering sidebars!
+  const cookieStore = await cookies();
+  const defaultCollapsed = cookieStore.get('sidebar:state')?.value === 'true';
+
   return (
-    <DashboardLayout userRole={userRole}>
+    <DashboardLayout userRole={userRole} defaultCollapsed={defaultCollapsed}>
       {children}
     </DashboardLayout>
   );
