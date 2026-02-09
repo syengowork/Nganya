@@ -1,15 +1,20 @@
-import { LandingHeader } from '@/components/landing/LandingHeader'; // Import the new header
+import { createClient } from '@/utils/supabase/server';
+import { LandingHeader } from '@/components/landing/LandingHeader';
 import { LandingHero } from '@/components/landing/LandingHero';
 import { LandingIntro } from '@/components/landing/LandingIntro';
 
-export default function Home() {
+export default async function Home() {
+  // 1. INTELLIGENT AUTH CHECK (Server-Side)
+  // We check session here so the Header knows immediately if it should show "Dashboard" or "Login"
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
   return (
     <main className="min-h-screen bg-background relative selection:bg-primary/30">
       
-      {/* 1. The Smart Header (Fixed on top) */}
-      <LandingHeader />
+      {/* 2. Pass the 'user' prop to the header */}
+      <LandingHeader user={user} />
 
-      {/* 2. The Content */}
       <LandingHero />
       <LandingIntro />
       

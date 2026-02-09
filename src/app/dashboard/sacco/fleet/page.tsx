@@ -84,7 +84,7 @@ export default async function FleetPage() {
        {/* We pass the initial data to the Client Component.
           The Client Component handles all interactivity (Search, Filter, Modals).
        */}
-       <FleetClient initialVehicles={vehicles || []} />
+       <FleetClient initialVehicles={vehicles || []} userId={user.id} />
     </div>
   );
 }

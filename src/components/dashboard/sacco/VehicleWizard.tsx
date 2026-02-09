@@ -1,20 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useForm, UseFormSetValue, FieldErrors, PathValue } from 'react-hook-form';
+import { useForm, SubmitHandler, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Upload, Trash2, ShieldCheck } from 'lucide-react';
+import { Loader2, Upload, Trash2, ShieldCheck, X, Image as ImageIcon, Sparkles } from 'lucide-react';
 import Image from 'next/image';
 import { useDropzone } from 'react-dropzone';
 import { cn } from '@/lib/utils';
 import { createVehicleAction, updateVehicleAction } from '@/actions/vehicle';
+import { toast } from 'sonner';
 
 // --- TYPES ---
 interface VehicleEditData {
@@ -34,384 +35,474 @@ interface VehicleWizardProps {
   isOpen: boolean;
   onClose: () => void;
   vehicleToEdit?: VehicleEditData | null;
+  userId: string;
+  onSuccess?: () => void;
 }
 
-// --- SCHEMAS ---
-const fileSchema = z.custom<File[]>();
-
-// Base schema for shared fields
-const baseSchema = z.object({
+// --- SCHEMA & TYPES ---
+const vehicleSchema = z.object({
   name: z.string().min(2, "Name is required"),
-  plate_number: z.string().regex(/^[A-Z]{3} \d{3}[A-Z]$/, "Format: KBC 123A"),
-  capacity: z.coerce.number().min(1, "Capacity required"),
-  rate_per_hour: z.coerce.number().min(100, "Min rate KES 100"),
-  features: z.array(z.string()).min(1, "Select at least one feature"),
-  description: z.string().min(20, "Tell us more about this Nganya (min 20 chars)"),
-  // New files (optional in edit mode, required in create mode via refinement)
-  cover_photo: fileSchema.optional(),
-  exterior_photos: fileSchema.optional(),
-  interior_photos: fileSchema.optional(),
-  // Tracking existing images
+  plate_number: z.string().min(3, "Plate number is required"),
+  // FIX: coerce handles string -> number conversion safely
+  capacity: z.coerce.number().min(1, "Capacity must be at least 1"),
+  rate_per_hour: z.coerce.number().min(0, "Rate cannot be negative"),
+  features: z.array(z.string()).default([]),
+  description: z.string().min(10, "Description needs to be longer"),
+  
+  // File handling: We use z.any() to bypass strict FileList checks in browser vs node
+  cover_photo: z.any().optional(),
+  exterior_photos: z.any().optional(),
+  interior_photos: z.any().optional(),
+
   kept_exterior: z.array(z.string()).optional(),
   kept_interior: z.array(z.string()).optional(),
 });
 
-type VehicleFormValues = z.infer<typeof baseSchema>;
+// Infer the type from the schema
+type VehicleFormValues = z.infer<typeof vehicleSchema>;
 
-const FEATURES_LIST = ["WiFi", "Sound System", "TV Screens", "VIP Lighting", "CCTV", "AC", "DJ on Board"];
+const FEATURES_LIST = [
+  "WiFi", "Music System", "TV Screens", "AC", "VIP Seating", 
+  "CCTV", "USB Charging", "Mood Lights", "Fridge"
+];
 
-// --- SMART DROPZONE COMPONENT ---
-interface ImageDropzoneProps {
-  fieldName: 'cover_photo' | 'exterior_photos' | 'interior_photos';
-  label: string;
-  maxFiles: number;
-  form: any; // Passing full form to handle both "new" and "kept" state
-  existingUrls?: string[]; // URLs from DB
-  keptFieldName?: 'kept_exterior' | 'kept_interior';
-}
-
-const ImageDropzone = ({ fieldName, label, maxFiles, form, existingUrls = [], keptFieldName }: ImageDropzoneProps) => {
-  const { setValue, watch, formState: { errors } } = form;
-  
-  // Watch new files
-  const newFiles = watch(fieldName) || [];
-  // Watch kept existing images (if applicable)
-  const keptFiles = keptFieldName ? watch(keptFieldName) : [];
-
-  // Determine total count to enforce limits
-  const totalCount = (keptFieldName ? keptFiles.length : (existingUrls.length > 0 && newFiles.length === 0 ? 1 : 0)) + newFiles.length;
-
-  const onDrop = (acceptedFiles: File[]) => {
-    const remainingSlots = maxFiles - (keptFieldName ? keptFiles.length : 0);
-    if (remainingSlots <= 0) return;
-
-    const filesToAdd = acceptedFiles.slice(0, remainingSlots);
-    const updatedNewFiles = maxFiles === 1 ? filesToAdd : [...newFiles, ...filesToAdd];
-    
-    setValue(fieldName, updatedNewFiles, { shouldValidate: true });
-  };
-
-  const removeNewFile = (index: number) => {
-    const updated = newFiles.filter((_: File, i: number) => i !== index);
-    setValue(fieldName, updated, { shouldValidate: true });
-  };
-
-  const removeExisting = (urlToRemove: string) => {
-    if (keptFieldName) {
-      // Remove from the "kept" array
-      const updated = keptFiles.filter((url: string) => url !== urlToRemove);
-      setValue(keptFieldName, updated, { shouldValidate: true });
-    } else {
-      // For single cover photo, we can't "remove" it, only replace it.
-      // But we can technically clear the preview if needed.
-    }
-  };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
-    onDrop, 
-    accept: {'image/*': []}, 
-    maxFiles: maxFiles
-  });
-
-  return (
-    <div className="space-y-3">
-      <label className="text-sm font-medium flex justify-between">
-        {label}
-        <span className="text-xs text-muted-foreground">{totalCount}/{maxFiles}</span>
-      </label>
-      
-      {/* Drop Area */}
-      {totalCount < maxFiles && (
-        <div 
-          {...getRootProps()} 
-          className={cn(
-            "border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition-colors bg-muted/20 hover:bg-muted/40",
-            isDragActive ? "border-primary bg-primary/5" : "border-border",
-            errors[fieldName] ? "border-destructive" : ""
-          )}
-        >
-          <input {...getInputProps()} />
-          <Upload className="h-6 w-6 mb-2 text-muted-foreground" />
-          <p className="text-xs text-muted-foreground font-medium">Click or drop to upload</p>
-        </div>
-      )}
-
-      {/* Previews Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* 1. Existing Images (Kept) */}
-        {keptFieldName && keptFiles.map((url: string, i: number) => (
-          <div key={url} className="relative aspect-square rounded-lg overflow-hidden border bg-muted group">
-            <Image src={url} alt="Existing" fill className="object-cover" />
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <Button type="button" variant="destructive" size="icon" className="h-8 w-8 rounded-full" onClick={() => removeExisting(url)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
-        
-        {/* Special Case: Single Cover Photo Existing */}
-        {!keptFieldName && existingUrls.length > 0 && newFiles.length === 0 && (
-           <div className="relative aspect-square rounded-lg overflow-hidden border bg-muted">
-             <Image src={existingUrls[0]} alt="Current Cover" fill className="object-cover" />
-             <div className="absolute bottom-0 w-full bg-black/60 text-white text-[10px] text-center py-1">Current</div>
-           </div>
-        )}
-
-        {/* 2. New Files */}
-        {newFiles.map((file: File, i: number) => (
-          <div key={i} className="relative aspect-square rounded-lg overflow-hidden border bg-muted group">
-            <Image src={URL.createObjectURL(file)} alt="New" fill className="object-cover" onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)} />
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <Button type="button" variant="destructive" size="icon" className="h-8 w-8 rounded-full" onClick={() => removeNewFile(i)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="absolute top-1 right-1">
-              <span className="bg-primary text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold">NEW</span>
-            </div>
-          </div>
-        ))}
-      </div>
-      {errors[fieldName] && <p className="text-xs text-destructive">{errors[fieldName]?.message as string}</p>}
-    </div>
-  );
-};
-
-
-// --- MAIN WIZARD ---
-export function VehicleWizard({ isOpen, onClose, vehicleToEdit }: VehicleWizardProps) {
+export function VehicleWizard({ isOpen, onClose, vehicleToEdit, userId, onSuccess }: VehicleWizardProps) {
   const [step, setStep] = useState(1);
-  const [progress, setProgress] = useState<{status: string, message: string}>({ status: 'idle', message: '' });
-  
-  const form = useForm<VehicleFormValues>({
-    resolver: zodResolver(baseSchema), // We use simple schema and refine logic in onSubmit
-    defaultValues: { 
-      name: '', plate_number: '', capacity: 33, rate_per_hour: 0, description: '', features: [],
-      cover_photo: [], exterior_photos: [], interior_photos: [],
-      kept_exterior: [], kept_interior: []
+  const [progress, setProgress] = useState<{ status: 'idle' | 'processing' | 'success' | 'error', message: string }>({ status: 'idle', message: '' });
+
+  // --- FORM ENGINE ---
+  const { 
+    register, 
+    handleSubmit, 
+    setValue, 
+    watch, 
+    trigger, 
+    reset,
+    formState: { errors } 
+  } = useForm<VehicleFormValues>({
+    resolver: zodResolver(vehicleSchema) as Resolver<VehicleFormValues>,
+    // FIX: Provide COMPLETE default values to satisfy TypeScript
+    defaultValues: {
+      name: '',
+      plate_number: '',
+      capacity: 0,
+      rate_per_hour: 0,
+      description: '',
+      features: [],
+      kept_exterior: [],
+      kept_interior: [],
     }
   });
 
-  const { register, handleSubmit, formState: { errors, isValid }, trigger, setValue, reset, watch } = form;
+  const watchedFeatures = watch('features');
+  const coverFiles = watch('cover_photo');
+  const exteriorFiles = watch('exterior_photos');
+  const interiorFiles = watch('interior_photos');
 
-  // --- EFFECT: PREFILL FORM ON OPEN ---
+  // --- PRELOAD DATA ---
   useEffect(() => {
     if (isOpen) {
-      setStep(1);
-      setProgress({ status: 'idle', message: '' });
-
       if (vehicleToEdit) {
-        // EDIT MODE: Populate fields
         reset({
           name: vehicleToEdit.name,
           plate_number: vehicleToEdit.plate_number,
           capacity: vehicleToEdit.capacity,
           rate_per_hour: vehicleToEdit.rate_per_hour,
-          description: vehicleToEdit.description || '',
+          description: vehicleToEdit.description,
           features: vehicleToEdit.features || [],
-          cover_photo: [], // Reset new files
-          exterior_photos: [],
-          interior_photos: [],
           kept_exterior: vehicleToEdit.exterior_photos_urls || [],
-          kept_interior: vehicleToEdit.interior_photos_urls || []
+          kept_interior: vehicleToEdit.interior_photos_urls || [],
         });
       } else {
-        // CREATE MODE: Reset to empty
+        // Reset to clean state for new entry
         reset({
-          name: '', plate_number: '', capacity: 33, rate_per_hour: 0, description: '', features: [],
-          cover_photo: [], exterior_photos: [], interior_photos: [],
-          kept_exterior: [], kept_interior: []
-        });
+            name: '',
+            plate_number: '',
+            capacity: 0,
+            rate_per_hour: 0,
+            description: '',
+            features: [],
+            kept_exterior: [],
+            kept_interior: [],
+        }); 
       }
+      setStep(1);
+      setProgress({ status: 'idle', message: '' });
     }
   }, [isOpen, vehicleToEdit, reset]);
 
-  // --- HANDLERS ---
-  const handleNext = async () => {
-    const fieldsToValidate: any[] = ['name', 'plate_number', 'capacity', 'rate_per_hour'];
-    
-    // Custom Validation for Cover Photo in Step 1
-    const coverNew = watch('cover_photo');
-    const hasExistingCover = vehicleToEdit?.cover_photo_url;
-    
-    if (!hasExistingCover && (!coverNew || coverNew.length === 0)) {
-      form.setError('cover_photo', { message: 'Cover photo is required' });
-      return; 
-    }
 
-    const isStepValid = await trigger(fieldsToValidate);
-    if (isStepValid) setStep(2);
+  // --- STEP LOGIC ---
+  const handleNext = async () => {
+    let isValid = false;
+
+    if (step === 1) {
+       // Validate Text Fields
+       isValid = await trigger(['name', 'plate_number', 'capacity', 'rate_per_hour', 'features', 'description']);
+       
+       // Cover Photo Logic
+       const hasNewCover = coverFiles && coverFiles.length > 0;
+       const hasExistingCover = !!vehicleToEdit?.cover_photo_url;
+       
+       if (isValid && !hasNewCover && !hasExistingCover) {
+          toast.error("Please upload a cover photo");
+          return;
+       }
+    } 
+    
+    if (isValid || step === 2) {
+       setStep((s) => s + 1);
+    }
   };
 
-  const onSubmit = async (data: VehicleFormValues) => {
+  // --- SUBMISSION LOGIC ---
+  const onSubmit: SubmitHandler<VehicleFormValues> = async (data) => {
     setStep(3);
-    setProgress({ status: 'processing', message: vehicleToEdit ? 'Updating Vehicle...' : 'Screening & Creating...' });
+    setProgress({ status: 'processing', message: 'Syncing with Headquarters...' });
 
     const formData = new FormData();
+    
+    // 1. Append Common Data
     formData.append('name', data.name);
     formData.append('plate_number', data.plate_number);
-    formData.append('capacity', data.capacity.toString());
-    formData.append('rate_per_hour', data.rate_per_hour.toString());
+    formData.append('capacity', String(data.capacity));
+    formData.append('rate_per_hour', String(data.rate_per_hour));
     formData.append('description', data.description);
     formData.append('features', JSON.stringify(data.features));
+    formData.append('owner_id', userId);
 
-    // Handle Cover Photo
-    if (data.cover_photo?.[0]) {
-      formData.append('cover_photo', data.cover_photo[0]);
+    if (data.cover_photo?.[0]) formData.append('cover_photo', data.cover_photo[0]);
+
+    // 2. Branch Logic (Update vs Create)
+    try {
+      let result;
+
+      if (vehicleToEdit) {
+        // === UPDATE MODE ===
+        if (data.exterior_photos?.length) {
+            Array.from(data.exterior_photos as File[]).forEach((file) => formData.append('new_exterior_photos', file));
+        }
+        if (data.interior_photos?.length) {
+            Array.from(data.interior_photos as File[]).forEach((file) => formData.append('new_interior_photos', file));
+        }
+        
+        formData.append('kept_exterior_photos', JSON.stringify(data.kept_exterior || []));
+        formData.append('kept_interior_photos', JSON.stringify(data.kept_interior || []));
+
+        // Call Action (3 Arguments)
+        result = await updateVehicleAction(vehicleToEdit.id, null, formData);
+
+      } else {
+        // === CREATE MODE ===
+        if (data.exterior_photos?.length) {
+            Array.from(data.exterior_photos as File[]).forEach((file) => formData.append('exterior_photos', file));
+        }
+        if (data.interior_photos?.length) {
+            Array.from(data.interior_photos as File[]).forEach((file) => formData.append('interior_photos', file));
+        }
+
+        // Call Action (2 Arguments)
+        result = await createVehicleAction(null, formData);
+      }
+
+      // 3. Handle Result
+      if (result?.status === 'success') {
+        setProgress({ status: 'success', message: 'Operation Successful!' });
+        toast.success(result.message);
+        setTimeout(() => {
+          onSuccess?.();
+          onClose();
+        }, 1500);
+      } else {
+        throw new Error(result?.message || "Operation failed");
+      }
+
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+        setProgress({ status: 'error', message: errorMessage });
+        toast.error(errorMessage);
     }
+  };
 
-    // Handle Arrays (New Files)
-    if (data.exterior_photos) Array.from(data.exterior_photos).forEach(f => formData.append('new_exterior_photos', f));
-    if (data.interior_photos) Array.from(data.interior_photos).forEach(f => formData.append('new_interior_photos', f));
+  // --- DROPZONE COMPONENT ---
+  const FileUpload = ({ 
+    label, 
+    files, 
+    setFiles, 
+    multiple = false,
+    existingUrls = [],
+    onRemoveExisting
+  }: { 
+    label: string, 
+    files?: File[], 
+    setFiles: (f: File[]) => void, 
+    multiple?: boolean,
+    existingUrls?: string[],
+    onRemoveExisting?: (url: string) => void
+  }) => {
+    const { getRootProps, getInputProps } = useDropzone({
+      accept: { 'image/*': [] },
+      multiple,
+      onDrop: (acceptedFiles) => {
+        setFiles(multiple ? [...(files || []), ...acceptedFiles] : acceptedFiles);
+      }
+    });
 
-    // Handle Arrays (Kept URLs - Only for Edit)
-    if (vehicleToEdit) {
-      formData.append('kept_exterior_photos', JSON.stringify(data.kept_exterior));
-      formData.append('kept_interior_photos', JSON.stringify(data.kept_interior));
-    }
+    return (
+      <div className="space-y-3">
+        <label className="text-sm font-medium text-foreground flex items-center gap-2">
+            {label}
+        </label>
+        
+        <div className="grid grid-cols-4 gap-3 mb-2">
+            {/* Existing Photos */}
+            {existingUrls.map((url, idx) => (
+                <div key={`exist-${idx}`} className="relative aspect-square rounded-xl overflow-hidden group border border-border/50 shadow-sm">
+                    <Image src={url} alt="Existing" fill className="object-cover transition-transform group-hover:scale-110" />
+                    <button 
+                        type="button"
+                        onClick={() => onRemoveExisting?.(url)}
+                        className="absolute top-1 right-1 bg-black/60 backdrop-blur text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-destructive"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 backdrop-blur-[2px] text-[10px] font-bold text-white text-center py-1">SAVED</div>
+                </div>
+            ))}
 
-    let result;
-    if (vehicleToEdit) {
-      result = await updateVehicleAction(vehicleToEdit.id, null, formData);
-    } else {
-      result = await createVehicleAction(null, formData);
-    }
-
-    if (result.status === 'success') {
-      setProgress({ status: 'success', message: 'Operation Successful!' });
-      setTimeout(onClose, 1500);
-    } else {
-      setProgress({ status: 'error', message: result.message });
-      setTimeout(() => setStep(2), 2000); // Go back to fix
-    }
+            {/* New Uploads */}
+            {files && Array.from(files).map((file, idx) => (
+                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden group border border-primary/50 shadow-sm ring-1 ring-primary/20">
+                    <Image src={URL.createObjectURL(file)} alt="Preview" fill className="object-cover transition-transform group-hover:scale-110" />
+                    <button 
+                        type="button"
+                        onClick={() => {
+                            const newFiles = [...files];
+                            newFiles.splice(idx, 1);
+                            setFiles(newFiles);
+                        }}
+                        className="absolute top-1 right-1 bg-black/60 backdrop-blur text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-all hover:bg-destructive"
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                    <div className="absolute bottom-0 left-0 right-0 bg-primary/90 text-[10px] font-bold text-white text-center py-1">NEW</div>
+                </div>
+            ))}
+            
+            {/* Drop Zone */}
+            <div 
+                {...getRootProps()} 
+                className={cn(
+                    "border-2 border-dashed border-muted-foreground/20 rounded-xl aspect-square flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary group",
+                    (files?.length === 0 && existingUrls.length === 0) && "col-span-4 aspect-auto h-32 bg-muted/20"
+                )}
+            >
+                <input {...getInputProps()} />
+                <div className="p-3 rounded-full bg-background shadow-sm group-hover:scale-110 transition-transform mb-2">
+                    <Upload className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-medium text-center px-2">{multiple ? "Drop photos here" : "Upload Cover"}</span>
+            </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[700px] p-0 gap-0 overflow-hidden bg-background/95 backdrop-blur-2xl border-white/10 shadow-2xl flex flex-col h-[90vh]">
-        <DialogTitle className="sr-only">Vehicle Wizard</DialogTitle>
+      {/* INDUSTRIAL UI UPGRADE: Aeroglass Effect */}
+      <DialogContent className="max-w-4xl p-0 overflow-hidden bg-background/80 backdrop-blur-xl border border-border shadow-2xl sm:rounded-2xl">
+         <DialogTitle className="sr-only">Vehicle Wizard</DialogTitle>
+         <DialogDescription className="sr-only">Manage your fleet</DialogDescription>
         
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col h-full">
-          {/* Header Progress */}
-          <div className="shrink-0 h-1.5 bg-muted w-full relative">
-            <motion.div 
-              className="h-full bg-primary absolute left-0 top-0" 
-              initial={{ width: 0 }} 
-              animate={{ width: `${(step / 3) * 100}%` }}
-            />
+        <div className="flex flex-col h-[85vh]">
+          {/* Header */}
+          <div className="p-6 border-b border-border flex justify-between items-center bg-muted/30">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                  <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black font-street tracking-tight text-foreground">
+                   {vehicleToEdit ? `Edit ${vehicleToEdit.name}` : 'Deploy Unit'}
+                </h2>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Step {step} of 3</p>
+              </div>
+            </div>
+            
+            {/* Progress Indicators */}
+            <div className="flex gap-1.5">
+               {[1, 2, 3].map(i => (
+                 <motion.div 
+                    key={i} 
+                    initial={false}
+                    animate={{ 
+                        width: step >= i ? 32 : 12,
+                        backgroundColor: step >= i ? "var(--primary)" : "var(--muted)"
+                    }}
+                    className="h-1.5 rounded-full" 
+                 />
+               ))}
+            </div>
           </div>
 
-          {/* Scrollable Body */}
-          <div className="flex-1 overflow-y-auto p-6">
+          {/* Form Content */}
+          <form onSubmit={handleSubmit(onSubmit)} className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 scroll-smooth">
             <AnimatePresence mode="wait">
+              
+              {/* === STEP 1: DETAILS === */}
               {step === 1 && (
-                <motion.div key="step1" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
-                  <div>
-                    <h2 className="text-2xl font-bold">{vehicleToEdit ? 'Edit Identity' : 'Vehicle Identity'}</h2>
-                    <p className="text-muted-foreground text-sm">Basic details and registration.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <ImageDropzone 
-                      fieldName="cover_photo" 
-                      label="Cover Photo" 
-                      maxFiles={1} 
-                      form={form}
-                      existingUrls={vehicleToEdit?.cover_photo_url ? [vehicleToEdit.cover_photo_url] : []}
-                    />
-                    
-                    <div className="space-y-4">
+                <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-8">
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                         <label className="text-sm font-medium">Name</label>
-                         <Input {...register('name')} placeholder="e.g. Catalyst" />
-                         {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+                        <label className="text-sm font-bold text-foreground">Vehicle Name</label>
+                        <Input {...register('name')} placeholder="e.g. CATALYST" className="bg-background/50 border-input focus:border-primary/50 h-11" />
+                        {errors.name && <span className="text-xs text-destructive font-medium">{errors.name.message}</span>}
                       </div>
                       <div className="space-y-2">
-                         <label className="text-sm font-medium">Plate Number</label>
-                         <Input {...register('plate_number')} placeholder="KBA 123A" className="uppercase font-mono" />
-                         {errors.plate_number && <p className="text-xs text-destructive">{errors.plate_number.message}</p>}
+                        <label className="text-sm font-bold text-foreground">Plate Number</label>
+                        <Input {...register('plate_number')} placeholder="KDA 001A" className="uppercase bg-background/50 border-input focus:border-primary/50 h-11" />
+                        {errors.plate_number && <span className="text-xs text-destructive font-medium">{errors.plate_number.message}</span>}
                       </div>
-                      <div className="flex gap-4">
-                         <div className="flex-1 space-y-2">
-                           <label className="text-sm font-medium">Capacity</label>
-                           <Input type="number" {...register('capacity')} />
-                         </div>
-                         <div className="flex-1 space-y-2">
-                           <label className="text-sm font-medium">Rate/Hr</label>
-                           <Input type="number" {...register('rate_per_hour')} />
-                         </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {step === 2 && (
-                <motion.div key="step2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
-                   <div>
-                    <h2 className="text-2xl font-bold">Features & Photos</h2>
-                    <p className="text-muted-foreground text-sm">Interior, exterior, and amenities.</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <ImageDropzone fieldName="exterior_photos" label="Exterior" maxFiles={4} form={form} keptFieldName="kept_exterior" />
-                    <ImageDropzone fieldName="interior_photos" label="Interior" maxFiles={4} form={form} keptFieldName="kept_interior" />
-                  </div>
-
-                  <div className="space-y-3">
-                    <label className="text-sm font-medium">Features</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {FEATURES_LIST.map(feat => (
-                        <div key={feat} className="flex items-center space-x-2 bg-muted/40 p-2 rounded-lg">
-                          <Checkbox 
-                            id={feat} 
-                            checked={watch('features').includes(feat)}
-                            onCheckedChange={(checked) => {
-                              const current = watch('features');
-                              setValue('features', checked ? [...current, feat] : current.filter(f => f !== feat));
-                            }}
-                          />
-                          <label htmlFor={feat} className="text-xs font-medium cursor-pointer w-full">{feat}</label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Description</label>
-                    <Textarea {...register('description')} className="h-20" />
-                  </div>
-                </motion.div>
-              )}
-
-              {step === 3 && (
-                <motion.div key="step3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20 text-center space-y-6">
-                   <div className="relative w-20 h-20 flex items-center justify-center">
-                     {progress.status === 'processing' && <Loader2 className="w-16 h-16 animate-spin text-primary" />}
-                     {progress.status === 'success' && <ShieldCheck className="w-16 h-16 text-green-500" />}
-                     {progress.status === 'error' && <Trash2 className="w-16 h-16 text-destructive" />}
                    </div>
-                   <h3 className="text-xl font-bold">{progress.message}</h3>
+
+                   <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                         <label className="text-sm font-bold text-foreground">Capacity</label>
+                         <Input type="number" {...register('capacity')} className="bg-background/50 border-border h-11" />
+                      </div>
+                      <div className="space-y-2">
+                         <label className="text-sm font-bold text-foreground">Hourly Rate (KES)</label>
+                         <Input type="number" {...register('rate_per_hour')} className="bg-background/50 border-border h-11" />
+                      </div>
+                   </div>
+
+                   <div className="space-y-2">
+                      <label className="text-sm font-bold text-foreground">Vibe Description</label>
+                      <Textarea {...register('description')} placeholder="Tell us about the sound, the lights, the route..." rows={4} className="bg-background/50 border-border resize-none" />
+                      {errors.description && <span className="text-xs text-destructive font-medium">{errors.description.message}</span>}
+                   </div>
+
+                   <div className="space-y-3">
+                      <label className="text-sm font-bold text-foreground">Features</label>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                         {FEATURES_LIST.map((feat) => (
+                           <div key={feat} 
+                                className={cn(
+                                    "flex items-center space-x-3 border p-3 rounded-xl cursor-pointer transition-all",
+                                    watchedFeatures?.includes(feat) 
+                                        ? "bg-primary/10 border-primary text-primary" 
+                                        : "bg-background/30 border-border hover:bg-muted/50"
+                                )}
+                                onClick={() => {
+                                   const current = watchedFeatures || [];
+                                   if (current.includes(feat)) setValue('features', current.filter(f => f !== feat));
+                                   else setValue('features', [...current, feat]);
+                                }}
+                           >
+                              <Checkbox checked={watchedFeatures?.includes(feat)} className="border-white/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary" />
+                              <span className="text-xs font-bold">{feat}</span>
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+
+                   <div className="pt-4 border-t border-border">
+                      <FileUpload 
+                         label="Cover Photo (Showstopper)" 
+                         files={coverFiles} 
+                         setFiles={(f) => setValue('cover_photo', f)}
+                         existingUrls={vehicleToEdit?.cover_photo_url ? [vehicleToEdit.cover_photo_url] : []}
+                      />
+                   </div>
+                </motion.div>
+              )}
+
+              {/* === STEP 2: MEDIA GALLERY === */}
+              {step === 2 && (
+                <motion.div key="step2" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-10">
+                   <div className="bg-gradient-to-r from-primary/10 via-background to-background border border-primary/20 p-5 rounded-xl flex items-start gap-4">
+                      <div className="p-2 bg-background rounded-lg shadow-sm">
+                         <ImageIcon className="w-6 h-6 text-primary" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-base text-foreground">Visuals Matter</h4>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            High-quality photos increase bookings by <span className="text-primary font-bold">40%</span>. 
+                            Focus on the rims, custom lights, and interior screens.
+                        </p>
+                      </div>
+                   </div>
+
+                   <FileUpload 
+                      label="Exterior Shots" 
+                      multiple 
+                      files={exteriorFiles} 
+                      setFiles={(f) => setValue('exterior_photos', f)} 
+                      existingUrls={watch('kept_exterior') || []}
+                      onRemoveExisting={(url) => setValue('kept_exterior', watch('kept_exterior')?.filter(u => u !== url))}
+                   />
+                   
+                   <FileUpload 
+                      label="Interior Vibes" 
+                      multiple 
+                      files={interiorFiles} 
+                      setFiles={(f) => setValue('interior_photos', f)} 
+                      existingUrls={watch('kept_interior') || []}
+                      onRemoveExisting={(url) => setValue('kept_interior', watch('kept_interior')?.filter(u => u !== url))}
+                   />
+                </motion.div>
+              )}
+
+              {/* === STEP 3: PROCESSING === */}
+              {step === 3 && (
+                <motion.div key="step3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20 text-center space-y-8">
+                   <div className="relative w-32 h-32 flex items-center justify-center">
+                     {/* Pulsing Background for processing */}
+                     {progress.status === 'processing' && (
+                         <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping" />
+                     )}
+                     
+                     <div className="relative z-10 w-24 h-24 bg-muted/30 backdrop-blur-md rounded-full flex items-center justify-center border border-border shadow-xl">
+                        {progress.status === 'processing' && <Loader2 className="w-10 h-10 animate-spin text-primary" />}
+                        {progress.status === 'success' && <ShieldCheck className="w-10 h-10 text-green-500 scale-125 transition-transform duration-500" />}
+                        {progress.status === 'error' && <Trash2 className="w-10 h-10 text-destructive" />}
+                     </div>
+                   </div>
+                   
+                   <div className="space-y-2 max-w-xs mx-auto">
+                      <h3 className="text-2xl font-black font-street tracking-tight">
+                          {progress.status === 'processing' ? 'Syncing Fleet...' : progress.status === 'success' ? 'Deployed!' : 'System Error'}
+                      </h3>
+                      <p className="text-sm text-muted-foreground font-medium">{progress.message}</p>
+                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </form>
 
-          {/* Footer */}
+          {/* Footer Navigation */}
           {step < 3 && (
-            <div className="p-6 border-t bg-background/95 backdrop-blur flex justify-between">
+            <div className="p-6 border-t border-border bg-muted/10 backdrop-blur-md flex justify-between items-center">
               {step > 1 ? (
-                <Button type="button" variant="outline" onClick={() => setStep(s => s - 1)}>Back</Button>
+                <Button type="button" variant="ghost" onClick={() => setStep(s => s - 1)} className="hover:bg-background/50">Back</Button>
               ) : (
-                <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+                <Button type="button" variant="ghost" onClick={onClose} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">Cancel</Button>
               )}
 
-              {step === 1 && <Button type="button" onClick={handleNext}>Next Step</Button>}
-              {step === 2 && <Button type="submit">{vehicleToEdit ? 'Save Changes' : 'Create Vehicle'}</Button>}
+              {step === 1 && (
+                 <Button type="button" onClick={handleNext} className="px-8 font-bold rounded-full shadow-lg shadow-primary/20">
+                    Next Step
+                 </Button>
+              )}
+              {step === 2 && (
+                 <Button type="submit" onClick={handleSubmit(onSubmit)} className="px-8 font-bold rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25">
+                    {vehicleToEdit ? 'Save Changes' : 'Launch Vehicle'}
+                 </Button>
+              )}
             </div>
           )}
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

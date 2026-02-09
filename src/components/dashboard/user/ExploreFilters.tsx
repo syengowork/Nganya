@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useDebouncedCallback } from 'use-debounce'; // You might need to install: npm i use-debounce
+import { useDebouncedCallback } from 'use-debounce';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
@@ -26,7 +26,7 @@ export function ExploreFilters() {
       params.delete('query');
     }
     replace(`?${params.toString()}`);
-  }, 300);
+  }, 200);
 
   const handleSort = (val: string) => {
     const params = new URLSearchParams(searchParams);

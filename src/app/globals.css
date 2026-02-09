@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
-/* 1. LOAD THE PLUGIN */
+/* 1. LOAD PLUGINS */
 @plugin "tailwindcss-animate";
 
-@custom-variant dark (&:is(.dark *));
+/* 2. ROBUST DARK MODE CONFIG */
+/* This ensures 'dark:' variants trigger correctly when the .dark class is applied */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   /* --- FONTS --- */
@@ -70,7 +72,7 @@
 :root {
   --radius: 0.75rem;
 
-  /* DAY HUSTLE */
+  /* DAY HUSTLE (Clean White/Blue) */
   --background: 210 20% 98%; 
   --foreground: 222 47% 11%;
 
@@ -80,7 +82,7 @@
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
 
-  --primary: 262 83% 58%; 
+  --primary: 262 83% 58%; /* Vivid Purple */
   --primary-foreground: 210 40% 98%;
 
   --secondary: 316 70% 50%;
@@ -89,7 +91,7 @@
   --muted: 210 40% 96.1%;
   --muted-foreground: 215 16% 47%;
 
-  --accent: 48 96% 53%;
+  --accent: 48 96% 53%; /* Matatu Yellow */
   --accent-foreground: 222 47% 11%;
 
   --destructive: 0 84.2% 60.2%;
@@ -116,7 +118,7 @@
 }
 
 .dark {
-  /* NIGHT RUN */
+  /* NIGHT RUN (Deep Blue/Black) */
   --background: 224 71% 4%; 
   --foreground: 210 40% 98%;
 
@@ -126,7 +128,7 @@
   --popover: 222 47% 11%;
   --popover-foreground: 210 40% 98%;
 
-  --primary: 48 96% 53%; 
+  --primary: 48 96% 53%; /* Neon Yellow (High Contrast) */
   --primary-foreground: 222 47% 11%;
 
   --secondary: 189 94% 43%;
@@ -163,9 +165,39 @@
 
 @layer base {
   * {
-    @apply border-border; /* REMOVED: outline-ring/50 */
+    @apply border-border; /* FIXED: Removed outline-ring/50 */
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1; /* Crisper Text */
+  }
+
+  /* BRANDING: Custom Selection Color */
+  ::selection {
+    @apply bg-primary/20 text-primary-foreground;
+  }
+}
+
+/* --- CINEMATIC UTILITIES --- */
+@layer utilities {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
+  /* Custom Slim Scrollbar (Optional, for dashboard areas) */
+  .slim-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .slim-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  .slim-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full hover:bg-muted-foreground/40 transition-colors;
   }
 }

@@ -1,137 +1,160 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Play, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ArrowRight, Play, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 
 export function LandingHero() {
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Fallback Slides (High Quality Matatu Shots)
   const slides = [
-    '/images/hero-1.jpg', // Replace with your actual paths
-    '/images/hero-2.jpg',
-    '/images/hero-3.jpg',
+    '/nganya1.jpg',
+    '/nganya2.jpg', 
   ];
 
-  // Auto-rotate slideshow only if video hasn't loaded
   useEffect(() => {
-    if (videoLoaded) return;
+    if (!videoError) return;
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % slides.length);
-    }, 4000);
+    }, 5000);
     return () => clearInterval(timer);
-  }, [videoLoaded, slides.length]);
+  }, [videoError, slides.length]);
+
+  const handleScrollDown = () => {
+    window.scrollTo({ top: window.innerHeight, behavior: 'smooth' });
+  };
 
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-black">
+    // FIX 1: Changed 'h-screen' to 'min-h-[100dvh]' so it grows if content is tall
+    // FIX 2: Added 'py-20' instead of just padding-top to keep content balanced
+    <section className="relative w-full min-h-[100dvh] flex items-center justify-center overflow-hidden bg-background">
       
-      {/* --- LAYER 1: VISUALS --- */}
-      <AnimatePresence mode="wait">
-        {!videoLoaded && (
-          <motion.div
-            key={currentSlide}
-            initial={{ opacity: 0, scale: 1.1 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 1.5 }}
-            className="absolute inset-0 z-0"
-          >
-            {/* Fallback Image */}
-            <div className="relative w-full h-full">
-               {/* Note: In production, use real images. Using a placeholder for now. */}
-               <div className="absolute inset-0 bg-neutral-900" /> 
-               {/* <Image src={slides[currentSlide]} alt="Hero" fill className="object-cover opacity-60" priority /> */}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ================= LAYER 1: MEDIA ================= */}
+      <div className="absolute inset-0 z-0 select-none">
+        <div className="absolute inset-0 bg-black/50 z-10" />
+        <div className="absolute top-0 left-0 right-0 h-40 bg-gradient-to-b from-black/90 via-black/40 to-transparent z-20 pointer-events-none" />
+        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background via-background/60 to-transparent z-20 pointer-events-none" />
 
-      {/* The Video (Loads in background) */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: videoLoaded ? 1 : 0 }}
-        transition={{ duration: 1 }}
-        className="absolute inset-0 z-0"
-      >
-        <video
-          ref={videoRef}
-          autoPlay
-          loop
-          muted
-          playsInline
-          onLoadedData={() => setVideoLoaded(true)}
-          className="h-full w-full object-cover opacity-60"
-        >
-          {/* Replace with your actual hosted video URL (e.g., from Vercel Blob or AWS S3) */}
-          <source src="/videos/nganya-hero.mp4" type="video/mp4" />
-        </video>
-      </motion.div>
-
-      {/* --- LAYER 2: TEXTURE & GRADIENTS --- */}
-      {/* Vignette */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black z-10" />
-      {/* Scanlines (Retro/Industrial Feel) */}
-      <div className="absolute inset-0 bg-[url('/patterns/grid.svg')] opacity-10 z-10 pointer-events-none" />
-
-
-      {/* --- LAYER 3: CONTENT --- */}
-      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-4">
-        
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="space-y-6 max-w-4xl"
-        >
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/20 bg-white/5 backdrop-blur-md text-white/80 text-xs uppercase tracking-widest mb-4">
-             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-             The Beat of Nairobi
-          </div>
-
-          {/* Headline */}
-          <h1 className="text-5xl md:text-7xl lg:text-9xl font-black tracking-tighter text-white drop-shadow-2xl">
-            RIDE THE <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-amber-400 to-primary animate-gradient">CULTURE.</span>
-          </h1>
-
-          {/* Subtitle */}
-          <p className="text-lg md:text-xl text-white/80 max-w-2xl mx-auto leading-relaxed">
-            Experience the loudest, fastest, and most artistic transport culture in the world. 
-            Book your seat in a premium Nganya today.
-          </p>
-
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-             <Button size="lg" className="h-14 px-8 text-lg font-bold rounded-full bg-white text-black hover:bg-white/90 shadow-[0_0_40px_rgba(255,255,255,0.3)] transition-transform hover:scale-105" asChild>
-                <Link href="/dashboard/user/explore">
-                  Start Exploring <ArrowRight className="ml-2 w-5 h-5" />
-                </Link>
-             </Button>
-             
-             <Button size="lg" variant="outline" className="h-14 px-8 text-lg font-bold rounded-full border-white/20 text-white hover:bg-white/10 backdrop-blur-md">
-                <Play className="mr-2 w-5 h-5 fill-white" /> Watch Film
-             </Button>
-          </div>
-        </motion.div>
+        <AnimatePresence mode="wait">
+          {!videoError ? (
+            <motion.div
+              key="video-player"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: videoLoaded ? 1 : 0 }}
+              transition={{ duration: 1 }}
+              className="w-full h-full fixed inset-0" // Fixed to cover full screen even if section grows
+            >
+              <video
+                autoPlay
+                loop
+                muted
+                playsInline
+                onLoadedData={() => setVideoLoaded(true)}
+                onError={() => setVideoError(true)}
+                poster="/nganya1.jpg"
+                className="w-full h-full object-cover scale-105"
+              >
+                <source src="/videos/nganya-hero.mp4" type="video/mp4" />
+              </video>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="slideshow"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1 }}
+              className="absolute inset-0"
+            >
+              <Image 
+                src={slides[currentSlide]}
+                alt="Nganya Culture"
+                fill
+                className="object-cover"
+                priority
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Scroll Indicator */}
+      {/* ================= LAYER 2: CONTENT ================= */}
+      <div className="relative z-30 container mx-auto px-4 h-full flex flex-col justify-center">
+        
+        {/* FIX 3: Balanced Padding (pt-32 pb-16) ensures buttons aren't pushed off screen */}
+        {/* On mobile, we reduce top padding (pt-24) to save space */}
+        <div className="pt-24 pb-16 md:pt-32 md:pb-12 max-w-5xl mx-auto text-center space-y-6 md:space-y-8">
+          
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+          >
+             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-white/90 text-sm font-bold backdrop-blur-md mb-6 md:mb-8 shadow-2xl ring-1 ring-white/5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent"></span>
+                </span>
+                <span className="tracking-wide text-xs md:text-sm">LIVE IN NAIROBI</span>
+             </div>
+
+             <h1 className="text-4xl md:text-7xl lg:text-8xl font-black text-white tracking-tighter font-street leading-[0.95] mb-4 md:mb-6 drop-shadow-2xl">
+                THE OS FOR <br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary via-white to-accent animate-gradient-x">
+                  MATATU CULTURE
+                </span>
+             </h1>
+             
+             <p className="text-base md:text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed drop-shadow-md font-medium text-balance px-4">
+                Manage fleets, track revenue, and streamline bookings with the only intelligent platform built for the Chaos and the Art.
+             </p>
+          </motion.div>
+
+          {/* Action Buttons */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2 md:pt-4 pb-8" // Added pb-8 buffer
+          >
+            <Button 
+              size="lg" 
+              className="w-full sm:w-auto rounded-full font-bold h-12 md:h-14 px-8 text-base md:text-lg bg-white text-black hover:bg-white/90 hover:scale-105 transition-all shadow-[0_0_40px_rgba(255,255,255,0.2)]"
+              asChild
+            >
+              <Link href="/register">
+                Start Free Trial <ArrowRight className="ml-2 w-5 h-5" />
+              </Link>
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              size="lg" 
+              className="w-full sm:w-auto rounded-full font-bold h-12 md:h-14 px-8 text-base md:text-lg border-white/20 bg-black/40 text-white hover:bg-white/10 backdrop-blur-md transition-all hover:border-white/40"
+            >
+              <Play className="mr-2 w-5 h-5 fill-white" /> Watch Film
+            </Button>
+          </motion.div>
+        </div>
+
+      </div>
+
+      {/* ================= LAYER 3: SCROLL BUTTON ================= */}
       <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, 10, 0] }}
-        transition={{ duration: 2, repeat: Infinity, delay: 1 }}
-        className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 text-white/50 flex flex-col items-center gap-2"
+        className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 text-white/50 cursor-pointer hover:text-white transition-colors group"
+        animate={{ y: [0, 10, 0] }}
+        transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+        onClick={handleScrollDown}
       >
-        <span className="text-[10px] uppercase tracking-[0.2em]">Scroll to Discover</span>
-        <ChevronDown className="w-6 h-6" />
+        <span className="text-[10px] uppercase tracking-[0.2em] font-bold group-hover:tracking-[0.3em] transition-all">Scroll</span>
+        <ChevronDown className="w-5 h-5 opacity-70 group-hover:opacity-100" />
       </motion.div>
-    </div>
+
+      <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[url('/patterns/noise.svg')]" />
+    </section>
   );
 }

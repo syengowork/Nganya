@@ -52,9 +52,10 @@ export interface VehicleEditData {
 
 interface FleetClientProps {
   initialVehicles: Vehicle[];
+  userId: string;
 }
 
-export default function FleetClient({ initialVehicles }: FleetClientProps) {
+export default function FleetClient({ initialVehicles, userId }: FleetClientProps) {
   const router = useRouter();
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -338,6 +339,7 @@ export default function FleetClient({ initialVehicles }: FleetClientProps) {
         isOpen={isModalOpen} 
         onClose={onWizardClose} 
         vehicleToEdit={selectedVehicle}
+        userId={userId}
       />
 
       {/* --- DELETE CONFIRMATION MODAL --- */}
